@@ -59,6 +59,7 @@ def get_options():
   parser.add_option('--skipZeroes', dest='skipZeroes', default=False, action="store_true", help="Skip proc x cat is numEntries = 0., or sumEntries < 0.")
   # For systematics
   parser.add_option('--skipSystematics', dest='skipSystematics', default=False, action="store_true", help="Skip shape systematics in signal model")
+  parser.add_option('--systematicsFile', help='Category systematics DataFrame pickle (overrides the campaign path)')
   parser.add_option('--useDiagonalProcForSyst', dest='useDiagonalProcForSyst', default=False, action="store_true", help="Use diagonal process for systematics (requires diagonal mapping produced by getDiagProc script)")
   parser.add_option("--scales", dest='scales', default='CMS_scale_e,CMS_scale_g,CMS_scale_m', help="Photon shape systematics: scales")
   parser.add_option("--scalesCorr", dest='scalesCorr', default='', help='Photon shape systematics: scalesCorr')
@@ -423,7 +424,14 @@ if opt.requireStrictConvergence and not optimizerPayload["strict_convergence_pas
 # FINAL MODEL: construction
 print("\n --> Constructing final model")
 # FIXME: add flav to FinalModel function
-fm = FinalModel(ssfMap,opt.proc,opt.cat,opt.flav,opt.ext,opt.year,sqrts__,nominalDatasets,xvar,MH,MHLow,MHHigh,opt.massPoints,xsbrMap,procSyst,opt.scales,opt.scalesCorr,opt.scalesGlobal,opt.smears,opt.doVoigtian,opt.useDCB,opt.skipSystematics,opt.doEffAccFromJson)
+systematicsFile = opt.systematicsFile
+if not opt.skipSystematics and systematicsFile is None:
+  relative = os.path.join("calcPhotonSyst", "pkl", opt.cat + ".pkl")
+  paths = [os.path.join(outputBase, "outdir_" + opt.ext, relative),
+           os.path.join(swd__, "outdir_" + opt.ext, relative),
+           os.path.join(swd__, "output_" + opt.ext, relative)]
+  systematicsFile = next((path for path in paths if os.path.isfile(path)), paths[0])
+fm = FinalModel(ssfMap,opt.proc,opt.cat,opt.flav,opt.ext,opt.year,sqrts__,nominalDatasets,xvar,MH,MHLow,MHHigh,opt.massPoints,xsbrMap,procSyst,opt.scales,opt.scalesCorr,opt.scalesGlobal,opt.smears,opt.doVoigtian,opt.useDCB,opt.skipSystematics,opt.doEffAccFromJson,systematicsFile)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # SAVE: to output workspace

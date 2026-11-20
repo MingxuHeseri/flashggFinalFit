@@ -13,7 +13,7 @@ from commonTools import *
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~   
 class FinalModel:
   # Constructor
-  def __init__(self,_ssfMap,_proc,_cat,_flav,_ext,_year,_sqrts,_datasets,_xvar,_MH,_MHLow,_MHHigh,_massPoints,_xsbrMap,_procSyst,_scales,_scalesCorr,_scalesGlobal,_smears,_doVoigtian,_useDCB,_skipSystematics,_doEffAccFromJson):
+  def __init__(self,_ssfMap,_proc,_cat,_flav,_ext,_year,_sqrts,_datasets,_xvar,_MH,_MHLow,_MHHigh,_massPoints,_xsbrMap,_procSyst,_scales,_scalesCorr,_scalesGlobal,_smears,_doVoigtian,_useDCB,_skipSystematics,_doEffAccFromJson,_systematicsFile=None):
     self.ssfMap = _ssfMap
     self.proc = _proc
     self.procSyst = _procSyst # Signal process used for systematics (useful for low stat cases)
@@ -54,7 +54,7 @@ class FinalModel:
     self.buildXSBRSplines()
     self.buildEffAccSpline()
     # If not skip systematics: add nuisance params to dict
-    if not self.skipSystematics: self.buildNuisanceMap()
+    if not self.skipSystematics: self.buildNuisanceMap(_systematicsFile)
     # Build final pdfs
     self.buildPdf(self.ssfMap['Total'],ext='total',useDCB=self.useDCB)
     self.Pdfs['final'] = self.Pdfs['total']
@@ -121,45 +121,39 @@ class FinalModel:
     self.NuisanceMap[nuisanceType][nuisanceName]['param'].setConstant(True)
   
   # Function for building Nuisance param map:
-  def buildNuisanceMap(self):
+  def buildNuisanceMap(self,psname):
     # Dict to store nuisances of different type in map
     for sType in ['scales','scalesCorr','scalesGlobal','smears']:
       if getattr(self,sType) != '': self.NuisanceMap[sType] = od()
 
     # Extract calcPhotonSyst output
-    psname = "%s/output_%s/calcPhotonSyst/pkl/%s.pkl"%(swd__,self.ext,self.cat)
-    if not os.path.exists(psname):
-      print(" --> [ERROR] Photon systematics do not exist (%s). Please run calcPhotonSyst mode first or skip systematics (--skipSystematics)"%psname)
-      sys.exit(1)
-    with open(psname,"r") as fpkl: psdata = pickle.load(fpkl)
-    
-    # Get row for proc: option to use diagonal process
-    r = psdata[psdata['proc']==self.procSyst]
-    if len(r) == 0:
-      print(" --> [WARNING] Process %s is not in systematics pkl (%s). Skipping systematics."%(self.proc,psname))
-      self.skipSystematics = True
+    if psname is None:
+      psname = os.path.join(swd__, "output_" + self.ext, "calcPhotonSyst", "pkl", self.cat + ".pkl")
+    with open(psname, "rb") as stream:
+      table = pickle.load(stream)
+    rows = table.loc[table["proc"] == self.procSyst]
+    for column, value in (("cat", self.cat), ("flav", self.flav)):
+      if column in table:
+        rows = rows.loc[rows[column] == value]
+    if len(rows) != 1:
+      raise ValueError(f"{psname}: expected one systematics row for process {self.procSyst}, "
+                       f"category {self.cat}, flavor {self.flav}; found {len(rows)}")
+    row = rows.iloc[0]
 
-    else:
-      # Add scales, scalesCorr, scalesGlobal, smears
-      for sType in ['scales','scalesCorr','scalesGlobal','smears']:
-        for syst in getattr(self,sType).split(","):
-          if syst == '': continue
-
-          # If corr/global nor in sType then build separate nuisance per year i.e. de-correlate
-          # if('Corr' in sType)|('Global' in sType): sExt = ""
-          # else: sExt = "_%s"%self.year
-          sExt = ""
-
-          # Extract info
-          systOpts = syst.split(":")
-          # sName = "%s_%s"%(systOpts[0],outputNuisanceExtMap[sType])
-          sName = systOpts[0]
-
-          # Extract constant values and make nuisance
-          if sType == 'scalesGlobal': cMean, cSigma, cRate = 0.,0.,0.
-          else: cMean, cSigma, cRate = r["%s_mean"%sName].values[0], r["%s_sigma"%sName].values[0], r["%s_rate"%sName].values[0]
-          sOpts = systOpts[1:] if len(systOpts) > 1 else []
-          self.makeNuisance("%s%s"%(sName,sExt),cMean,cSigma,cRate,sType,sOpts)
+    for systType in self.NuisanceMap:
+      for spec in getattr(self, systType).split(","):
+        if not spec: continue
+        name, *opts = spec.split(":")
+        if systType == "scalesGlobal":
+          mean, sigma, rate = 0., 0., 0.
+        else:
+          # Older calcPhotonSyst tables qualify columns with energy and type.
+          suffix = {"scales": "scale", "scalesCorr": "scaleCorr", "smears": "smear"}[systType]
+          prefix = name if name + "_mean" in row else f"{name}_{self.sqrts}{suffix}"
+          mean, sigma, rate = (float(row[f"{prefix}_{field}"]) for field in ("mean", "sigma", "rate"))
+          if not np.isfinite([mean, sigma, rate]).all():
+            raise ValueError(f"{psname}: non-finite {name} coefficient for {self.procSyst}/{self.cat}/{self.flav}")
+        self.makeNuisance(name, mean, sigma, rate, systType, opts)
 
   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Function to get RV fraction func
