@@ -441,6 +441,8 @@ print("\n --> Saving output workspace to file: %s"%foutName)
 os.makedirs(foutDir, exist_ok=True)
 fout = ROOT.TFile(foutName,"RECREATE")
 outWS = ROOT.RooWorkspace("%s_%s"%(outputWSName__,sqrts__),"%s_%s"%(outputWSName__,sqrts__))
+# The interpolation scan leaves MH at its last grid point.
+MH.setVal(float(MHNominal))
 fm.save(outWS)
 outWS.Write()
 fout.Close()
