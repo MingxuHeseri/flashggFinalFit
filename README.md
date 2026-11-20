@@ -1,5 +1,8 @@
 # Final Fits (higgsdnafinalfit)
 
+[H→Zγ Run 3 signal and background fits](HZG/README.md)
+
+
 This is the branch for using final fits with the output of HiggsDNA.
 
 Welcome to the new Final Fits package. Here lies a a series of scripts which are used to run the final stages of CMS Hgg analyses: signal modelling, background modelling, datacard creation, final statistical interpretation and final result plots.
